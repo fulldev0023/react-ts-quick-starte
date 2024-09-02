@@ -1,61 +1,66 @@
-const { resolve } = require('path')
-const HtmlWebpackPlugin = require('html-webpack-plugin')
-const CopyPlugin = require('copy-webpack-plugin')
-const WebpackBar = require('webpackbar')
-const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin')
-const HardSourceWebpackPlugin = require('hard-source-webpack-plugin')
-const MiniCssExtractPlugin = require('mini-css-extract-plugin')
-const TerserPlugin = require('terser-webpack-plugin')
-const OptimizeCssAssetsPlugin = require('optimize-css-assets-webpack-plugin')
-const { isDev, PROJECT_PATH, IS_OPEN_HARD_SOURCE } = require('../constants')
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const WebpackBar = require('webpackbar');
+const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
+const CopyPlugin = require('copy-webpack-plugin');
+const paths = require('../paths');
+const { isDevelopment, isProduction } = require('../env');
+const { imageInlineSizeLimit } = require('../conf');
 
 const getCssLoaders = (importLoaders) => [
-  isDev ? 'style-loader' : MiniCssExtractPlugin.loader,
+  isDevelopment ? 'style-loader' : MiniCssExtractPlugin.loader,
   {
     loader: 'css-loader',
     options: {
       modules: false,
-      sourceMap: isDev,
+      sourceMap: isDevelopment,
       importLoaders,
     },
   },
   {
     loader: 'postcss-loader',
     options: {
-      ident: 'postcss',
-      plugins: [
-        // 修复一些和 flex 布局相关的 bug
-        require('postcss-flexbugs-fixes'),
-        require('postcss-preset-env')({
-          autoprefixer: {
-            grid: true,
-            flexbox: 'no-2009'
-          },
-          stage: 3,
-        }),
-        require('postcss-normalize'),
-      ],
-      sourceMap: isDev,
+      postcssOptions: {
+        plugins: [
+          require('postcss-flexbugs-fixes'),
+          isProduction && [
+            'postcss-preset-env',
+            {
+              autoprefixer: {
+                grid: true,
+                flexbox: 'no-2009',
+              },
+              stage: 3,
+            },
+          ],
+        ].filter(Boolean),
+      },
     },
   },
-]
+];
 
 module.exports = {
   entry: {
-    app: resolve(PROJECT_PATH, './src/index.tsx'),
+    app: paths.appIndex,
   },
-  output: {
-    filename: `js/[name]${isDev ? '' : '.[hash:8]'}.js`,
-    path: resolve(PROJECT_PATH, './dist'),
+  cache: {
+    type: 'filesystem',
+    buildDependencies: {
+      config: [__filename],
+    },
   },
   resolve: {
     extensions: ['.tsx', '.ts', '.js', '.json'],
     alias: {
-      'Src': resolve(PROJECT_PATH, './src'),
-      'Common': resolve(PROJECT_PATH, './src/common'),
-      'Components': resolve(PROJECT_PATH, './src/components'),
-      'Utils': resolve(PROJECT_PATH, './src/utils'),
-    }
+      Src: paths.appSrc,
+      Components: paths.appSrcComponents,
+      Utils: paths.appSrcUtils,
+    },
+  },
+  externals: {
+    react: 'React',
+    'react-dom': 'ReactDOM',
+    axios: 'axios',
   },
   module: {
     rules: [
@@ -70,120 +75,60 @@ module.exports = {
         use: getCssLoaders(1),
       },
       {
-        test: /\.less$/,
-        use: [
-          ...getCssLoaders(2),
-          {
-            loader: 'less-loader',
-            options: {
-              sourceMap: isDev,
-            },
-          },
-        ],
-      },
-      {
         test: /\.scss$/,
         use: [
           ...getCssLoaders(2),
           {
             loader: 'sass-loader',
             options: {
-              sourceMap: isDev,
+              sourceMap: isDevelopment,
             },
           },
         ],
       },
       {
         test: [/\.bmp$/, /\.gif$/, /\.jpe?g$/, /\.png$/],
-        use: [
-          {
-            loader: 'url-loader',
-            options: {
-              limit: 10 * 1024,
-              name: '[name].[contenthash:8].[ext]',
-              outputPath: 'assets/images',
-            },
+        type: 'asset',
+        parser: {
+          dataUrlCondition: {
+            maxSize: imageInlineSizeLimit,
           },
-        ],
+        },
       },
       {
-        test: /\.(ttf|woff|woff2|eot|otf)$/,
-        use: [
-          {
-            loader: 'url-loader',
-            options: {
-              name: '[name].[contenthash:8].[ext]',
-              outputPath: 'assets/fonts',
-            },
-          },
-        ],
+        test: /\.(eot|svg|ttf|woff|woff2?)$/,
+        type: 'asset/resource',
       },
-    ]
+    ],
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: resolve(PROJECT_PATH, './public/index.html'),
-      filename: 'index.html',
-      cache: false,
-      minify: isDev ? false : {
-        removeAttributeQuotes: true,
-        collapseWhitespace: true,
-        removeComments: true,
-        collapseBooleanAttributes: true,
-        collapseInlineTagWhitespace: true,
-        removeRedundantAttributes: true,
-        removeScriptTypeAttributes: true,
-        removeStyleLinkTypeAttributes: true,
-        minifyCSS: true,
-        minifyJS: true,
-        minifyURLs: true,
-        useShortDoctype: true,
-      },
+      template: paths.appHtml,
+      cache: true,
     }),
     new CopyPlugin({
       patterns: [
         {
-          context: resolve(PROJECT_PATH, './public'),
+          context: paths.appPublic,
           from: '*',
-          to: resolve(PROJECT_PATH, './dist'),
+          to: paths.appBuild,
           toType: 'dir',
+          globOptions: {
+            dot: true,
+            gitignore: true,
+            ignore: ['**/index.html'],
+          },
         },
       ],
     }),
     new WebpackBar({
-      name: isDev ? '正在启动' : '正在打包',
-      color: '#fa8c16',
+      name: isDevelopment ? 'RUNNING' : 'BUNDLING',
+      color: isDevelopment ? '#52c41a' : '#722ed1',
     }),
     new ForkTsCheckerWebpackPlugin({
       typescript: {
-        configFile: resolve(PROJECT_PATH, './tsconfig.json'),
+        configFile: paths.appTsConfig,
       },
     }),
-    IS_OPEN_HARD_SOURCE && new HardSourceWebpackPlugin(),
-    !isDev && new MiniCssExtractPlugin({
-      filename: 'css/[name].[contenthash:8].css',
-      chunkFilename: 'css/[name].[contenthash:8].css',
-      ignoreOrder: false,
-    }),
-  ].filter(Boolean),
-  externals: {
-    react: 'React',
-    'react-dom': 'ReactDOM',
-  },
-  optimization: {
-    minimize: !isDev,
-    minimizer: [
-      !isDev && new TerserPlugin({
-        extractComments: false,
-        terserOptions: {
-          compress: { pure_funcs: ['console.log'] },
-        }
-      }),
-      !isDev && new OptimizeCssAssetsPlugin()
-    ].filter(Boolean),
-    splitChunks: {
-      chunks: 'all',
-      name: true,
-    },
-  },
-}
+  ],
+};

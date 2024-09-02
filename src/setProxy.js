@@ -13,6 +13,6 @@ const proxySettings = {
     },
   },
   // .....
-}
+};
 
-module.exports = proxySettings
+module.exports = proxySettings;
